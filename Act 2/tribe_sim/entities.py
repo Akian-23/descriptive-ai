@@ -171,27 +171,37 @@ class Gatherer:
         self.food_collected += portion
     
     def calculate_fitness(self):
-        # STUDENT ASSIGNMENT 1: Implement a better fitness function
-        # Current version only considers survival time - very basic!
-        #
-        # Available variables to consider:
-        # - self.age: how long this gatherer has survived
-        # - self.food_collected: total food gathered
-        # - self.energy: current energy level (0-100)
-        # - self.alive: whether still alive
-        # - self.genes: dict with 'speed', 'caution', 'search_pattern', 'efficiency', 'cooperation'
-        #
-        # Strategy hints:
-        # 1. Balance survival vs resource gathering (both matter!)
-        # 2. Consider rewarding efficient gatherers (more food per time alive)
-        # 3. Maybe penalize overly cautious gatherers who survive but gather little?
-        # 4. Could reward cooperation or punish antisocial behavior
-        # 5. Think about edge cases: dead vs alive, high energy vs low energy
-        #
-        # Remember: Higher fitness = more likely to reproduce!
+
+        # Fitness considers:
+        # 1. Survival: longer-lived gatherers are rewarded
+        # 2. Food collection: more food is better
+        # 3. Energy efficiency: retaining energy while actively gathering and avoiding predators
         
-        return self.age / 100.0  # Minimal version: just survival time
-    
+        # Higher fitness = more likely to reproduce
+
+        # Base survival reward
+        if not self.alive:
+         survival_score = 0.5  # partial credit for having survived some time
+        else:
+            survival_score = 1.0  # full credit if still alive
+
+        # Food efficiency: food collected per time alive
+        time_alive = max(self.age, 1)  # avoid division by zero
+        food_efficiency = self.food_collected / time_alive  # normalize to 0-1 scale later
+
+        # Energy factor: reward high energy but scaled by activity
+        # We assume a gatherer that has high energy AND collected food acted efficiently
+        energy_factor = self.energy / GATHERER_MAX_ENERGY
+
+        # Combine factors with weights
+        # Survival matters most, food collection next, energy last
+        fitness = (0.5 * survival_score) + (0.35 * food_efficiency) + (0.15 * energy_factor)
+
+        # cap at 1.0 for normalization
+        fitness = min(1.0, fitness)
+
+        return fitness
+            
     def take_damage(self):
         """Handle death/life loss"""
         self.alive = False
