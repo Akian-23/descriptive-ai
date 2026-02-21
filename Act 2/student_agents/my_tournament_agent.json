@@ -1,12 +1,12 @@
 {
-  "name": "My Evolved Agent",
+  "name": "Stellar",
   "genes": [
     1.0,
     1.0,
-    0.48133874186118913,
+    0.2658705918345952,
     0.0,
-    0.3454967235855081,
-    0.9359113580017795
+    0.3634325947877103,
+    0.8891204962547128
   ],
-  "description": "A short description of your agent's general strategy"
+  "description": "Cooperates with cooperative opponents but retaliates against defectors"
 }

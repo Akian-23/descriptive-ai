@@ -73,7 +73,7 @@ def load_student_agents(folder_path="student_agents"):
     """
     student_agents = []
     
-    print("📂 Loading student agents from:", folder_path)
+    print(" Loading student agents from:", folder_path)
     print("="*70 + "\n")
     
     if not os.path.exists(folder_path):
@@ -98,7 +98,7 @@ def load_student_agents(folder_path="student_agents"):
             # Load the module dynamically
             spec = importlib.util.spec_from_file_location(module_name, filepath)
             if spec is None or spec.loader is None:
-                print(f"❌ Could not load spec for {filepath.name}")
+                print(f" Could not load spec for {filepath.name}")
                 continue
                 
             module = importlib.util.module_from_spec(spec)
@@ -807,14 +807,18 @@ def run_battle_royale(folder_path="student_agents",
     generate_interactive_dashboard(tournament_data)
     
     return bracket_champion, rr_tournament, student_agents
+
 def generate_interactive_dashboard(tournament_data, filename="tournament_dashboard.html"):
     """Generate interactive HTML dashboard for exploring results"""
+    import sys
+    sys.stdout.reconfigure(encoding='utf-8')
+
     import time
     
     time.sleep(1)
     
     print("\n" + "="*70)
-    print("🌐 GENERATING INTERACTIVE DASHBOARD")
+    print(" GENERATING INTERACTIVE DASHBOARD")
     print("="*70 + "\n")
     
     html = f"""<!DOCTYPE html>
@@ -1194,7 +1198,7 @@ def generate_interactive_dashboard(tournament_data, filename="tournament_dashboa
 <body>
     <div class="container">
         <header>
-            <h1>🏆 Agent Battle Royale Results</h1>
+            <h1> Agent Battle Royale Results</h1>
             <p class="subtitle">Unit 6: The Ultimate Showdown</p>
             <p class="subtitle">Generated: {tournament_data['tournament_info']['generated_at']}</p>
         </header>
@@ -1209,7 +1213,7 @@ def generate_interactive_dashboard(tournament_data, filename="tournament_dashboa
                     <p style="margin-top: 10px; color: #666;">Won the single-elimination bracket!</p>
                 </div>
                 <div class="champion-box">
-                    <h3>🏆 Round-Robin Champion</h3>
+                    <h3> Round-Robin Champion</h3>
                     <div class="name">{tournament_data['tournament_info']['round_robin_champion']}</div>
                     <p style="margin-top: 10px; color: #666;">Highest total score across all matches!</p>
                 </div>
@@ -1319,12 +1323,12 @@ def generate_interactive_dashboard(tournament_data, filename="tournament_dashboa
             agent2_class = "winner" if match['winner'] == match['agent2'] else "loser"
             
             # Add trophy for championship match
-            trophy = "🏆" if is_final else ""
+            trophy = "" if is_final else ""
             connector = "" if is_final else '<div class="bracket-connector"></div>'
             
             html += f"""
                         <div class="bracket-match">
-                            {trophy and '<div class="championship-trophy">🏆</div>'}
+                            {trophy and '<div class="championship-trophy"> </div>'}
                             <div class="bracket-agent {agent1_class}">
                                 <span class="agent-name">{match['agent1']}</span>
                                 <span class="agent-score">{match['score1']}</span>
@@ -1476,11 +1480,11 @@ def generate_interactive_dashboard(tournament_data, filename="tournament_dashboa
         tournament_data['superlatives']['most_aggressive']['wins'],
         tournament_data['superlatives']['most_aggressive']['win_rate']
     )
-    
-    with open(filename, 'w') as f:
+
+    with open(filename, 'w', encoding='utf-8') as f:
         f.write(html)
     
-    print(f"✅ Interactive dashboard generated: {filename}")
+    print(f" Interactive dashboard generated: {filename}")
     print(f"   Open this file in your browser to explore results!")
     print(f"   Features:")
     print(f"     - Searchable tables")
