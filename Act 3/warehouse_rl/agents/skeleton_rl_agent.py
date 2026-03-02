@@ -14,6 +14,7 @@ This agent currently makes terrible decisions:
 Students should replace the naive methods with proper optimization algorithms.
 """
 
+from matplotlib.pyplot import grid
 import numpy as np
 from typing import Dict, Optional
 from .standardized_agents import BaselineAgent
@@ -122,19 +123,282 @@ class SkeletonOptimizationAgent(BaselineAgent):
         - No consideration of delivery distances
         - Wastes manager time on pointless moves
         """
-        
         # TODO WEEK 1 STEP 1: Students should implement intelligent layout optimization
         # Current approach: Occasionally make random swaps
+
+        # Only optimize every 100 timesteps
+        if current_timestep % 100 != 0:
+            return [0, 0]
+
+        grid = self.env.warehouse_grid
+
+        # Step 1: Get item frequency data
+        if not hasattr(grid, "item_access_frequency"):
+            return [0, 0]
+
+        frequencies = np.array(grid.item_access_frequency)
+        active_items = np.where(frequencies > 0)[0]
+        if len(active_items) == 0:
+            return [0, 0]
+
+        # Step 2: Identify hot items (top 25%)
+        threshold = np.percentile(frequencies[active_items], 75)
+        hot_items = active_items[frequencies[active_items] >= threshold]
+
+        # Step 3: Get delivery positions
+        delivery_positions = getattr(grid, "truck_bay_positions", [(grid.width // 2, grid.height // 2)])
+
+        best_swap = None
+        best_benefit = 0
+
+        # Step 4: Evaluate each hot item
+        for item in hot_items:
+            locations = grid.find_item_locations(item)
+            if not locations:
+                continue
+            current_pos = locations[0]
+            
+            current_distance = min(
+                grid.manhattan_distance(current_pos, d)
+                for d in delivery_positions
+            )
+
+            # Only optimize if far from delivery
+            if current_distance <= 3:
+                continue
+
+            # Use helper to find best swap
+            swap = self._find_closer_position(current_pos, delivery_positions)
+            if swap:
+                current_index, target_index = swap
+                # Convert back to 2D for distance calculation
+                current_pos_2d = (current_index // grid.width, current_index % grid.width)
+                target_pos_2d = (target_index // grid.width, target_index % grid.width)
+                distance_saved = min(
+                    grid.manhattan_distance(current_pos_2d, d) for d in delivery_positions
+                ) - min(grid.manhattan_distance(target_pos_2d, d) for d in delivery_positions)
+                benefit = distance_saved * frequencies[item]
+                if benefit > best_benefit:
+                    best_benefit = benefit
+                    best_swap = swap
+
+        # Step 6: Return the swap if beneficial
+        if best_swap:
+            print(f"Timestep {current_timestep}: hot_items={hot_items}")
+            print(f"Best swap found: {best_swap}, benefit={best_benefit}")
+            print(f"Delivery positions: {delivery_positions}")
+            self.action_history.append({'layout_swap': best_swap, 'layout_phase': 1})
+            return best_swap
         
-        if current_timestep % 100 == 0 and np.random.random() < 0.2:  # Random timing
-            # Pick two random positions to swap
-            grid_size = self.env.grid_width * self.env.grid_height
-            pos1 = np.random.randint(0, grid_size)
-            pos2 = np.random.randint(0, grid_size)
-            return [pos1, pos2]
+        # Phase 2: Co-occurrence clustering (optional, every 200 steps)
+        if current_timestep % 200 == 0:
+            cooccurrence_swap = self._find_cooccurrence_swap()
+            if cooccurrence_swap:
+                self.action_history.append({'layout_swap': cooccurrence_swap, 'layout_phase': 2})
+                print(f"Phase 2 swap: {cooccurrence_swap}")
+                return cooccurrence_swap
+
         
-        return [0, 0]  # No swap
+        # No swap
+        print(f"Timestep {current_timestep}: hot_items={hot_items}")
+        print("No beneficial swap found")
+        print(f"Delivery positions: {delivery_positions}")
+        return [0, 0]  # No beneficial swap found
     
+
+
+    # Helper method for Step 5
+    def _find_closer_position(self, current_pos, delivery_positions, min_improvement=1):
+        """
+        Greedy neighborhood search for better item placement.
+
+        Searches all storage positions to find the one that gives the largest
+        distance improvement toward delivery points.
+
+        Returns [current_index, target_index] if beneficial swap found.
+        """
+        grid = self.env.warehouse_grid
+        best_swap = None
+        current_idx = current_pos[1] * grid.width + current_pos[0]
+
+        current_dist = min(grid.manhattan_distance(current_pos, d) for d in delivery_positions)
+        best_improvement = 0
+
+        for y in range(grid.height):
+            for x in range(grid.width):
+                if grid.cell_types[y, x] != 1:  # Only storage
+                    continue
+
+                # Skip if already occupied by the same item
+                if (x, y) == current_pos:
+                    continue
+
+                new_dist = min(grid.manhattan_distance((x, y), d) for d in delivery_positions)
+                improvement = current_dist - new_dist
+                if improvement > best_improvement and improvement >= min_improvement:
+                    best_improvement = improvement
+                    target_idx = y * grid.width + x
+                    best_swap = [current_idx, target_idx]
+        
+        # Debug info
+        if best_swap:
+            print(f"Found better position: {best_swap}, improvement={best_improvement}")
+        return best_swap    
+    
+    # Helper method for Phase 2: co-occurrence clustering
+    def _find_cooccurrence_swap(self):
+        """
+        Greedy clustering algorithm for association-based spatial optimization.
+        
+        Returns swap that maximizes benefit = co-occurrence_frequency × distance_saved
+        """
+        grid = self.env.warehouse_grid
+        cooccurrence = grid.item_cooccurrence
+        
+        # Parameters
+        min_cooccurrence = 2
+        min_distance = 3
+        best_benefit = 0
+        best_swap = None
+        
+        num_items = cooccurrence.shape[0]
+        
+        for item1 in range(num_items):
+            for item2 in range(item1 + 1, num_items):
+                frequency = cooccurrence[item1, item2]
+                if frequency <= min_cooccurrence:
+                    continue
+                
+                loc1 = grid.find_item_locations(item1)
+                loc2 = grid.find_item_locations(item2)
+                
+                if not loc1 or not loc2:
+                    continue
+                
+                r1, c1 = loc1[0]
+                r2, c2 = loc2[0]
+                
+                current_distance = abs(r1 - r2) + abs(c1 - c2)
+                if current_distance <= min_distance:
+                    continue
+                
+                benefit = frequency * current_distance
+                if benefit > best_benefit:
+                    best_benefit = benefit
+                    
+                    # Try adjacent empty spot near item1
+                    neighbors = [(r1, c1 + 1), (r1, c1 - 1), (r1 + 1, c1), (r1 - 1, c1)]
+                    found = False
+                    for nr, nc in neighbors:
+                        if 0 <= nr < grid.height and 0 <= nc < grid.width:
+                            if grid.cell_types[nr, nc] == 1:
+                                best_swap = [r2 * grid.width + c2, nr * grid.width + nc]
+                                found = True
+                                break
+                    if not found:
+                        best_swap = [r2 * grid.width + c2, r1 * grid.width + c1]
+        
+        return best_swap
+    
+    def track_layout_performance(self):
+        """
+        Performance analysis for greedy layout optimization algorithms.
+        
+        Measures: 
+        - Layout efficiency (frequency-weighted distances)
+        - Algorithm convergence (swaps per period)
+        - Optimization impact over time
+        """
+        if not hasattr(self, 'layout_metrics'):
+            self.layout_metrics = []
+        
+        # Calculate current layout efficiency using weighted distance metric
+        efficiency = self._calculate_layout_efficiency()
+        
+        self.layout_metrics.append({
+            'timestep': self.env.current_timestep,
+            'efficiency': efficiency,
+            'total_swaps': len([a for a in self.action_history if a['layout_swap'] != [0, 0]]),
+            'phase1_swaps': self._count_frequency_swaps(),
+            'phase2_swaps': self._count_cooccurrence_swaps()
+        })
+        
+        # Print progress every 1000 steps
+        if self.env.current_timestep % 1000 == 0:
+            recent_efficiency = np.mean([m['efficiency'] for m in self.layout_metrics[-10:]])
+            print(f"Layout efficiency: {recent_efficiency:.3f}")
+
+    def _calculate_layout_efficiency(self):
+        """
+        Calculate a frequency-weighted layout efficiency score.
+        
+        Efficiency = 1 - (weighted_avg_distance / max_possible_distance)
+        """
+        grid = self.env.warehouse_grid
+
+        if not hasattr(grid, "item_access_frequency"):
+            return 0.5  # fallback
+
+        frequencies = np.array(grid.item_access_frequency)
+        active_items = np.where(frequencies > 0)[0]
+        if len(active_items) == 0:
+            return 0.0  # fallback
+
+        delivery_positions = getattr(grid, "truck_bay_positions", [(grid.width // 2, grid.height // 2)])
+
+        weighted_distance_sum = 0
+        total_frequency = 0
+
+        for item in active_items:
+            locations = grid.find_item_locations(item)
+            if not locations:
+                continue
+            pos = locations[0]
+            min_dist = min(grid.manhattan_distance(pos, d) for d in delivery_positions)
+            weighted_distance_sum += min_dist * frequencies[item]
+            total_frequency += frequencies[item]
+
+        if total_frequency == 0:
+            return 0.5
+
+        avg_weighted_distance = weighted_distance_sum / total_frequency
+        max_possible_distance = grid.width + grid.height  # worst-case distance
+        efficiency = 1.0 - (avg_weighted_distance / max_possible_distance)
+        return efficiency
+
+    # Optional helpers to count swaps per phase
+    def _count_frequency_swaps(self):
+        """Count how many swaps came from Phase 1 (frequency-based)"""
+        if not hasattr(self, 'action_history'):
+            return 0
+        return sum(1 for a in self.action_history if a.get('layout_phase') == 1)
+
+
+    def _count_cooccurrence_swaps(self):
+        """Count how many swaps came from Phase 2 (co-occurrence clustering)"""
+        if not hasattr(self, 'action_history'):
+            return 0
+        return sum(1 for a in self.action_history if a.get('layout_phase') == 2)
+    
+    def get_action(self, observation: Dict) -> Dict:
+        # Existing layout/staffing decision calls
+        layout_action = self._get_naive_layout_action(observation['time'][0])
+        staffing_action = self._get_naive_staffing_action(observation['financial'], observation['employees'])
+
+        # Track layout performance every 100 steps
+        if observation['time'][0] % 100 == 0:
+            self.track_layout_performance()
+
+        order_assignments = self._get_naive_order_assignments(
+        observation['order_queue'], observation['employees']
+        )
+
+        return {
+            'layout_swap': layout_action,
+            'staffing_action': staffing_action,
+            'order_assignments': order_assignments
+        }
+
     def _get_naive_order_assignments(self, queue_info, employee_info) -> list:
         """
         WEEK 2 STEP 2: Order assignment - students should improve this!
